@@ -1,4 +1,4 @@
-# @version 0.3.9
+# @version 0.3.7
 
 """
 @title Curve DCA Bot
@@ -111,6 +111,7 @@ def _safe_transfer_from(_token: address, _from: address, _to: address, _value: u
 def deposit(route: address[9], swap_params: uint256[3][4], amount: uint256, pools: address[4], number_trades: uint256, interval: uint256, starting_time: uint256):
     _value: uint256 = msg.value
     _fee: uint256 = self.fee
+    _fee = _fee * number_trades
     assert _value >= _fee, "Insufficient fee"
     send(self.refund_wallet, _fee)
     _value = unsafe_sub(_value, _fee)
@@ -182,7 +183,7 @@ def _swap(deposit_id: uint256, amount_out_min: uint256) -> uint256:
         if _deposit.route[last_index] != empty(address):
             break
     if _deposit.route[0] == VETH:
-        _out_amount = CurveSwapRouter(ROUTER).exchange_multiple(_deposit.route, _deposit.swap_params, _amount, amount_out_min, _deposit.pools, self)
+        _out_amount = CurveSwapRouter(ROUTER).exchange_multiple(_deposit.route, _deposit.swap_params, _amount, amount_out_min, _deposit.pools, self, value=_amount)
     else:
         self._safe_approve(_deposit.route[0], ROUTER, _amount)
         _out_amount = CurveSwapRouter(ROUTER).exchange_multiple(_deposit.route, _deposit.swap_params, _amount, amount_out_min, _deposit.pools, self)
@@ -213,9 +214,15 @@ def multiple_swap(deposit_id: DynArray[uint256, MAX_SIZE], amount_out_min: DynAr
         self._swap(deposit_id[i], amount_out_min[i])
 
 @external
-def swap(deposit_id: uint256, amount_out_min: uint256) -> uint256:
+def multiple_swap_view(deposit_id: DynArray[uint256, MAX_SIZE]) -> DynArray[uint256, MAX_SIZE]:
     assert msg.sender == empty(address) # only for view function
-    return self._swap(deposit_id, amount_out_min)
+    _len: uint256 = len(deposit_id)
+    res: DynArray[uint256, MAX_SIZE] = []
+    for i in range(MAX_SIZE):
+        if i >= len(deposit_id):
+            break
+        res.append(self._swap(deposit_id[i], 1))
+    return res
 
 @external
 @nonreentrant('lock')
