@@ -221,7 +221,7 @@ def multiple_swap_view(deposit_id: DynArray[uint256, MAX_SIZE]) -> DynArray[uint
     for i in range(MAX_SIZE):
         if i >= len(deposit_id):
             break
-        res.append(self._swap(deposit_id[i], 1))
+        res.append(self._swap(deposit_id[i], 0))
     return res
 
 @external
@@ -271,3 +271,8 @@ def update_service_fee_collector(new_service_fee_collector: address):
     assert msg.sender == self.service_fee_collector, "Unauthorized"
     self.service_fee_collector = new_service_fee_collector
     log UpdateServiceFeeCollector(msg.sender, new_service_fee_collector)
+
+@external
+@payable
+def __default__():
+    assert msg.sender == ROUTER
