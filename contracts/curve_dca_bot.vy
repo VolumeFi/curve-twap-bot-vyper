@@ -271,3 +271,8 @@ def update_service_fee_collector(new_service_fee_collector: address):
     assert msg.sender == self.service_fee_collector, "Unauthorized"
     self.service_fee_collector = new_service_fee_collector
     log UpdateServiceFeeCollector(msg.sender, new_service_fee_collector)
+
+@external
+@payable
+def __default__():
+    assert msg.sender == ROUTER
