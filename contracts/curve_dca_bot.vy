@@ -169,9 +169,9 @@ def _safe_transfer(_token: address, _to: address, _value: uint256):
         assert convert(_response, bool) # dev: failed transfer
 
 @internal
-def _swap(deposit_id: uint256, amount_out_min: uint256) -> uint256:
+def _swap(deposit_id: uint256, remaining_count: uint256, amount_out_min: uint256) -> uint256:
     _deposit: Deposit = self.deposit_list[deposit_id]
-    assert _deposit.remaining_counts > 0, "all traded"
+    assert _deposit.remaining_counts > 0 and _deposit.remaining_counts == remaining_count, "wrong count"
     _amount: uint256 = _deposit.input_amount / _deposit.remaining_counts
     _deposit.input_amount -= _amount
     _deposit.remaining_counts -= 1
@@ -201,27 +201,27 @@ def _swap(deposit_id: uint256, amount_out_min: uint256) -> uint256:
 
 @external
 @nonreentrant('lock')
-def multiple_swap(deposit_id: DynArray[uint256, MAX_SIZE], amount_out_min: DynArray[uint256, MAX_SIZE]):
+def multiple_swap(deposit_id: DynArray[uint256, MAX_SIZE], remaining_counts: DynArray[uint256, MAX_SIZE], amount_out_min: DynArray[uint256, MAX_SIZE]):
     assert msg.sender == self.compass_evm, "Unauthorized"
     _len: uint256 = len(deposit_id)
-    assert _len == len(amount_out_min), "Validation error"
-    _len = unsafe_add(unsafe_mul(unsafe_add(_len, 2), 64), 36)
+    assert _len == len(amount_out_min) and _len == len(remaining_counts), "Validation error"
+    _len = unsafe_add(unsafe_mul(unsafe_add(_len, 2), 96), 36)
     assert len(msg.data) == _len, "invalid payload"
     assert self.paloma == convert(slice(msg.data, unsafe_sub(_len, 32), 32), bytes32), "invalid paloma"
     for i in range(MAX_SIZE):
         if i >= len(deposit_id):
             break
-        self._swap(deposit_id[i], amount_out_min[i])
+        self._swap(deposit_id[i], remaining_counts[i], amount_out_min[i])
 
 @external
-def multiple_swap_view(deposit_id: DynArray[uint256, MAX_SIZE]) -> DynArray[uint256, MAX_SIZE]:
+def multiple_swap_view(deposit_id: DynArray[uint256, MAX_SIZE], remaining_counts: DynArray[uint256, MAX_SIZE]) -> DynArray[uint256, MAX_SIZE]:
     assert msg.sender == empty(address) # only for view function
     _len: uint256 = len(deposit_id)
     res: DynArray[uint256, MAX_SIZE] = []
     for i in range(MAX_SIZE):
         if i >= len(deposit_id):
             break
-        res.append(self._swap(deposit_id[i], 1))
+        res.append(self._swap(deposit_id[i], remaining_counts[i], 1))
     return res
 
 @external
