@@ -37,7 +37,6 @@ VETH: constant(address) = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE # Virtual E
 ROUTER: immutable(address)
 MAX_SIZE: constant(uint256) = 8
 compass_evm: public(address)
-admin: public(address)
 deposit_list: HashMap[uint256, Deposit]
 next_deposit: public(uint256)
 refund_wallet: public(address)
