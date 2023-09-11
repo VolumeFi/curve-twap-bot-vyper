@@ -133,7 +133,6 @@ def deposit(swap_infos: DynArray[SwapInfo, MAX_SIZE], number_trades: uint256, in
             assert _value >= swap_info.amount, "Insufficient deposit"
             _value = unsafe_sub(_value, swap_info.amount)
         else:
-            send(msg.sender, _value)
             self._safe_transfer_from(swap_info.route[0], msg.sender, self, swap_info.amount)
         _starting_time: uint256 = starting_time
         if starting_time <= block.timestamp:
@@ -246,6 +245,22 @@ def cancel(deposit_id: uint256):
     _deposit.remaining_counts = 0
     self.deposit_list[deposit_id] = _deposit
     log Canceled(deposit_id)
+
+@external
+@nonreentrant('lock')
+def multiple_cancel(deposit_ids: DynArray[uint256, MAX_SIZE]):
+    for deposit_id in deposit_ids:
+        _deposit: Deposit = self.deposit_list[deposit_id]
+        assert _deposit.depositor == msg.sender, "Unauthorized"
+        assert _deposit.input_amount > 0, "all traded"
+        if _deposit.route[0] == VETH:
+            send(msg.sender, _deposit.input_amount)
+        else:
+            self._safe_transfer(_deposit.route[0], msg.sender, _deposit.input_amount)
+        _deposit.input_amount = 0
+        _deposit.remaining_counts = 0
+        self.deposit_list[deposit_id] = _deposit
+        log Canceled(deposit_id)
 
 @external
 def update_compass(new_compass: address):
