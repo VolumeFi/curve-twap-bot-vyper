@@ -1,7 +1,7 @@
 # @version 0.3.7
 
 """
-@title Curve DCA Bot
+@title Curve TWAP Bot
 @license Apache 2.0
 @author Volume.finance
 """
@@ -16,6 +16,12 @@ struct Deposit:
     interval: uint256
     remaining_counts: uint256
     starting_time: uint256
+
+struct SwapInfo:
+    route: address[9]
+    swap_params: uint256[3][4]
+    amount: uint256
+    pools: address[4]
 
 interface WrappedEth:
     def deposit(): payable
@@ -107,45 +113,48 @@ def _safe_transfer_from(_token: address, _from: address, _to: address, _value: u
 @external
 @payable
 @nonreentrant('lock')
-def deposit(route: address[9], swap_params: uint256[3][4], amount: uint256, pools: address[4], number_trades: uint256, interval: uint256, starting_time: uint256):
+def deposit(swap_infos: DynArray[SwapInfo, MAX_SIZE], number_trades: uint256, interval: uint256, starting_time: uint256):
     _value: uint256 = msg.value
     _fee: uint256 = self.fee
     _fee = _fee * number_trades
     assert _value >= _fee, "Insufficient fee"
     send(self.refund_wallet, _fee)
     _value = unsafe_sub(_value, _fee)
-    last_index: uint256 = 0
-    for i in range(4):
-        last_index = 8 - i * 2
-        if route[last_index] != empty(address):
-            break
-    token1: address = route[last_index]
-    if route[0] == VETH:
-        assert _value >= amount, "Insufficient deposit"
-        if _value > amount:
-            send(msg.sender, unsafe_sub(_value, amount))
-    else:
-        send(msg.sender, _value)
-        self._safe_transfer_from(route[0], msg.sender, self, amount)
     _next_deposit: uint256 = self.next_deposit
-    _starting_time: uint256 = starting_time
-    if starting_time <= block.timestamp:
-        _starting_time = block.timestamp
-    assert number_trades > 0, "Wrong trade count"
-    self.deposit_list[_next_deposit] = Deposit({
-        depositor: msg.sender,
-        route: route,
-        swap_params: swap_params,
-        pools: pools,
-        input_amount: amount,
-        number_trades: number_trades,
-        interval: interval,
-        remaining_counts: number_trades,
-        starting_time: _starting_time
-    })
-    log Deposited(_next_deposit, route[0], route[last_index], amount, number_trades, interval, _starting_time, msg.sender)
-    _next_deposit += 1
+    for swap_info in swap_infos:
+        last_index: uint256 = 0
+        for i in range(4):
+            last_index = 8 - i * 2
+            if swap_info.route[last_index] != empty(address):
+                break
+        assert swap_info.amount > 0, "Insufficient deposit"
+        token1: address = swap_info.route[last_index]
+        if swap_info.route[0] == VETH:
+            assert _value >= swap_info.amount, "Insufficient deposit"
+            _value = unsafe_sub(_value, swap_info.amount)
+        else:
+            send(msg.sender, _value)
+            self._safe_transfer_from(swap_info.route[0], msg.sender, self, swap_info.amount)
+        _starting_time: uint256 = starting_time
+        if starting_time <= block.timestamp:
+            _starting_time = block.timestamp
+        assert number_trades > 0, "Wrong trade count"
+        self.deposit_list[_next_deposit] = Deposit({
+            depositor: msg.sender,
+            route: swap_info.route,
+            swap_params: swap_info.swap_params,
+            pools: swap_info.pools,
+            input_amount: swap_info.amount,
+            number_trades: number_trades,
+            interval: interval,
+            remaining_counts: number_trades,
+            starting_time: _starting_time
+        })
+        log Deposited(_next_deposit, swap_info.route[0], swap_info.route[last_index], swap_info.amount, number_trades, interval, _starting_time, msg.sender)
+        _next_deposit = unsafe_add(_next_deposit, 1)
     self.next_deposit = _next_deposit
+    if _value > 0:
+        send(msg.sender, _value)
 
 @internal
 def _safe_approve(_token: address, _to: address, _value: uint256):
