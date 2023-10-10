@@ -42,6 +42,7 @@ interface ERC20:
 VETH: constant(address) = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE # Virtual ETH
 ROUTER: immutable(address)
 MAX_SIZE: constant(uint256) = 8
+DENOMINATOR: constant(uint256) = 10000
 compass_evm: public(address)
 deposit_list: HashMap[uint256, Deposit]
 next_deposit: public(uint256)
@@ -49,6 +50,7 @@ refund_wallet: public(address)
 fee: public(uint256)
 paloma: public(bytes32)
 service_fee_collector: public(address)
+service_fee: public(uint256)
 
 event Deposited:
     deposit_id: uint256
@@ -88,17 +90,24 @@ event UpdateServiceFeeCollector:
     old_service_fee_collector: address
     new_service_fee_collector: address
 
+event UpdateServiceFee:
+    old_service_fee: uint256
+    new_service_fee: uint256
+
 @external
-def __init__(_compass_evm: address, router: address, _refund_wallet: address, _fee: uint256, _service_fee_collector: address):
+def __init__(_compass_evm: address, router: address, _refund_wallet: address, _fee: uint256, _service_fee_collector: address, _service_fee: uint256):
     self.compass_evm = _compass_evm
     ROUTER = router
     self.refund_wallet = _refund_wallet
     self.fee = _fee
     self.service_fee_collector = _service_fee_collector
+    assert _service_fee < DENOMINATOR
+    self.service_fee = _service_fee
     log UpdateCompass(empty(address), _compass_evm)
     log UpdateRefundWallet(empty(address), _refund_wallet)
     log UpdateFee(0, _fee)
     log UpdateServiceFeeCollector(empty(address), _service_fee_collector)
+    log UpdateServiceFee(0, _service_fee)
 
 @internal
 def _safe_transfer_from(_token: address, _from: address, _to: address, _value: uint256):
@@ -115,11 +124,13 @@ def _safe_transfer_from(_token: address, _from: address, _to: address, _value: u
 @nonreentrant('lock')
 def deposit(swap_infos: DynArray[SwapInfo, MAX_SIZE], number_trades: uint256, interval: uint256, starting_time: uint256):
     _value: uint256 = msg.value
+    assert self.paloma != empty(bytes32), "Paloma not set"
     _fee: uint256 = self.fee
-    _fee = _fee * number_trades
-    assert _value >= _fee, "Insufficient fee"
-    send(self.refund_wallet, _fee)
-    _value = unsafe_sub(_value, _fee)
+    if _fee > 0:
+        _fee = _fee * number_trades
+        assert _value >= _fee, "Insufficient fee"
+        send(self.refund_wallet, _fee)
+        _value = unsafe_sub(_value, _fee)
     _next_deposit: uint256 = self.next_deposit
     for swap_info in swap_infos:
         last_index: uint256 = 0
@@ -194,15 +205,20 @@ def _swap(deposit_id: uint256, remaining_count: uint256, amount_out_min: uint256
     else:
         self._safe_approve(_deposit.route[0], ROUTER, _amount)
         _out_amount = CurveSwapRouter(ROUTER).exchange_multiple(_deposit.route, _deposit.swap_params, _amount, amount_out_min, _deposit.pools, self)
-    actual_amount: uint256 = 0
+    actual_amount: uint256 = _out_amount
+    service_fee_amount: uint256 = 0
+    _service_fee: uint256 = self.service_fee
+    if _service_fee > 0:
+        service_fee_amount = unsafe_div(_out_amount * _service_fee, DENOMINATOR)
+        actual_amount = unsafe_sub(actual_amount, service_fee_amount)
     if _deposit.route[last_index] == VETH:
-        actual_amount = unsafe_div(_out_amount * 995, 1000)
         send(_deposit.depositor, actual_amount)
-        send(self.service_fee_collector, unsafe_sub(_out_amount, actual_amount))
+        if service_fee_amount > 0:
+            send(self.service_fee_collector, service_fee_amount)
     else:
-        actual_amount = unsafe_div(_out_amount * 995, 1000)
         self._safe_transfer(_deposit.route[last_index], _deposit.depositor, actual_amount)
-        self._safe_transfer(_deposit.route[last_index], self.service_fee_collector, unsafe_sub(_out_amount, actual_amount))
+        if service_fee_amount > 0:
+            self._safe_transfer(_deposit.route[last_index], self.service_fee_collector, service_fee_amount)
     log Swapped(deposit_id, _deposit.remaining_counts, _amount, _out_amount)
     return _out_amount
 
@@ -296,6 +312,14 @@ def update_service_fee_collector(new_service_fee_collector: address):
     log UpdateServiceFeeCollector(msg.sender, new_service_fee_collector)
 
 @external
+def update_service_fee(new_service_fee: uint256):
+    assert msg.sender == self.compass_evm and len(msg.data) == 68 and convert(slice(msg.data, 36, 32), bytes32) == self.paloma, "Unauthorized"
+    assert new_service_fee < DENOMINATOR, "Wrong service fee"
+    old_service_fee: uint256 = self.service_fee
+    self.service_fee = new_service_fee
+    log UpdateServiceFee(old_service_fee, new_service_fee)
+
+@external
 @payable
 def __default__():
-    assert msg.sender == ROUTER
+    pass
