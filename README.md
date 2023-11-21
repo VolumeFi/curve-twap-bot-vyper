@@ -32,15 +32,15 @@ This function was built to be called as view function. So function type in ABI s
 
 Deposit a token with its amount with an expected token address and amount. This is run by users.
 
-| Key           | Type          | Description                                 |
-| ------------- | ------------- | ------------------------------------------- |
-| route         | address[9]    | Swapping route on Curve swap router         |
-| swap_params   | uint256[3][4] | Deposit token amount                        |
-| amount        | uint256       | Expected token amount from the initial swap |
-| pools         | address[4]    | Permille of profit_taking                   |
-| number_trades | uint256       | Permille of stop_loss                       |
-| interval      | uint256       | Permille of stop_loss                       |
-| starting_time | uint256       | Permille of stop_loss                       |
+| Key           | Type          | Description                         |
+| ------------- | ------------- | ----------------------------------- |
+| route         | address[11]   | Swapping route on Curve swap router |
+| swap_params   | uint256[5][5] | Swap params on Curve                |
+| amount        | uint256       | Deposit token amount                |
+| pools         | address[5]    | Swap pools address on Curve         |
+| number_trades | uint256       | Number of TWAP trades               |
+| interval      | uint256       | TWAP interval                       |
+| starting_time | uint256       | Starting timestamp of TWAP          |
 
 ### cancel
 
@@ -62,14 +62,6 @@ Swap and send multiple tokens to the depositor. This is run by Compass-EVM only.
 | amount_out_min   | uint256[] | minimum amount to receive from swapping |
 
 ## Admin functions
-
-### update_compass
-
-Update Compass-EVM address.  This is run by Compass-EVM only.
-
-| Key         | Type    | Description             |
-| ----------- | ------- | ----------------------- |
-| new_compass | address | New compass-evm address |
 
 ### update_refund_wallet
 
@@ -105,13 +97,13 @@ Update service fee collector address.  This is run by the original fee collector
 
 | Key              | Type          | Description                |
 | ---------------- | ------------- | -------------------------- |
-| depositor        | address       | depositor address          |
-| route            | address[9]    | Swap route on Curve swap   |
-| swap_params      | uint256[3][4] | Swap params on Curve swap  |
-| pools            | address[4]    | Swap pools on Curve swap   |
-| input_amount     | uint256       | input amount to trade      |
-| number_trades    | uint256       | initial trading count      |
-| interval         | uint256       | interval                   |
-| remaining_counts | uint256       | remaining trading count    |
-| starting_time    | uint256       | start timestamp of the bot |
+| depositor        | address       | Depositor address          |
+| route            | address[11]   | Swap route on Curve swap   |
+| swap_params      | uint256[5][5] | Swap params on Curve swap  |
+| pools            | address[5]    | Swap pools on Curve swap   |
+| input_amount     | uint256       | Input amount to trade      |
+| number_trades    | uint256       | Initial trading count      |
+| interval         | uint256       | Interval                   |
+| remaining_counts | uint256       | Remaining trading count    |
+| starting_time    | uint256       | Starting timestamp of TWAP |
 
