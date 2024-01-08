@@ -68,6 +68,10 @@ event Swapped:
 event Canceled:
     deposit_id: uint256
 
+event UpdateCompass:
+    old_compass: address
+    new_compass: address
+
 event UpdateRefundWallet:
     old_refund_wallet: address
     new_refund_wallet: address
@@ -96,6 +100,7 @@ def __init__(_compass_evm: address, router: address, _refund_wallet: address, _f
     self.service_fee_collector = _service_fee_collector
     assert _service_fee < DENOMINATOR
     self.service_fee = _service_fee
+    log UpdateCompass(empty(address), _compass_evm)
     log UpdateRefundWallet(empty(address), _refund_wallet)
     log UpdateFee(0, _fee)
     log UpdateServiceFeeCollector(empty(address), _service_fee_collector)
@@ -240,6 +245,12 @@ def multiple_cancel(deposit_ids: DynArray[uint256, MAX_SIZE]):
         _deposit.remaining_counts = 0
         self.deposit_list[deposit_id] = _deposit
         log Canceled(deposit_id)
+
+@external
+def update_compass(new_compass: address):
+    assert msg.sender == self.compass_evm and len(msg.data) == 68 and convert(slice(msg.data, 36, 32), bytes32) == self.paloma, "Unauthorized"
+    self.compass_evm = new_compass
+    log UpdateCompass(msg.sender, new_compass)
 
 @external
 def update_refund_wallet(new_refund_wallet: address):
