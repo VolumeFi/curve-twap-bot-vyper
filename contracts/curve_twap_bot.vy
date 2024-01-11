@@ -58,6 +58,7 @@ event Deposited:
     interval: uint256
     starting_time: uint256
     depositor: address
+    is_stable_swap: bool
 
 event Swapped:
     deposit_id: uint256
@@ -125,6 +126,12 @@ def deposit(swap_infos: DynArray[SwapInfo, MAX_SIZE], number_trades: uint256, in
             last_index = unsafe_sub(10, unsafe_add(i, i))
             if swap_info.route[last_index] != empty(address):
                 break
+        is_stable_swap: bool = True
+        for i in range(5):
+            if swap_info.swap_params[i][2] == 0:
+                break
+            if swap_info.swap_params[i][2] != 8 and (swap_info.swap_params[i][2] == 9 or swap_info.swap_params[i][3] != 1):
+                is_stable_swap = False
         assert swap_info.amount > 0, "Insufficient deposit"
         token1: address = swap_info.route[last_index]
         if swap_info.route[0] == VETH:
@@ -147,7 +154,7 @@ def deposit(swap_infos: DynArray[SwapInfo, MAX_SIZE], number_trades: uint256, in
             remaining_counts: number_trades,
             starting_time: _starting_time
         })
-        log Deposited(_next_deposit, swap_info.route[0], swap_info.route[last_index], swap_info.amount, number_trades, interval, _starting_time, msg.sender)
+        log Deposited(_next_deposit, swap_info.route[0], swap_info.route[last_index], swap_info.amount, number_trades, interval, _starting_time, msg.sender, is_stable_swap)
         _next_deposit = unsafe_add(_next_deposit, 1)
     self.next_deposit = _next_deposit
     if _value > 0:
