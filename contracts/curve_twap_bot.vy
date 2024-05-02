@@ -138,7 +138,7 @@ def deposit(swap_infos: DynArray[SwapInfo, MAX_SIZE], number_trades: uint256, in
             assert _value >= swap_info.amount, "Insufficient deposit"
             _value = unsafe_sub(_value, swap_info.amount)
         else:
-            assert ERC20(swap_info.route[0]).transferFrom(msg.sender, self, swap_info.amount, default_return_value = True), "failed transferFrom"
+            assert ERC20(swap_info.route[0]).transferFrom(msg.sender, self, swap_info.amount, default_return_value = True), "Failed transferFrom"
         _starting_time: uint256 = starting_time
         if starting_time <= block.timestamp:
             _starting_time = block.timestamp
@@ -161,10 +161,14 @@ def deposit(swap_infos: DynArray[SwapInfo, MAX_SIZE], number_trades: uint256, in
         send(msg.sender, _value)
 
 @internal
+def _safe_transfer(_token: address, _to: address, _value: uint256):
+    assert ERC20(_token).transfer(_to, _value, default_return_value=True), "Failed transfer"
+
+@internal
 def _swap(deposit_id: uint256, remaining_count: uint256, amount_out_min: uint256, count_check: bool = True) -> uint256:
     _deposit: Deposit = self.deposit_list[deposit_id]
     if count_check:
-        assert _deposit.remaining_counts == remaining_count, "wrong count"
+        assert _deposit.remaining_counts == remaining_count, "Wrong count"
     _amount: uint256 = _deposit.input_amount / _deposit.remaining_counts
     _deposit.input_amount = unsafe_sub(_deposit.input_amount, _amount)
     _deposit.remaining_counts = unsafe_sub(_deposit.remaining_counts, 1)
@@ -178,7 +182,7 @@ def _swap(deposit_id: uint256, remaining_count: uint256, amount_out_min: uint256
     if _deposit.route[0] == VETH:
         _out_amount = CurveSwapRouter(ROUTER).exchange(_deposit.route, _deposit.swap_params, _amount, amount_out_min, _deposit.pools, self, value=_amount)
     else:
-        assert ERC20(_deposit.route[0]).approve(ROUTER, _amount, default_return_value = True), "failed approve"
+        assert ERC20(_deposit.route[0]).approve(ROUTER, _amount, default_return_value = True), "Failed approve"
         _out_amount = CurveSwapRouter(ROUTER).exchange(_deposit.route, _deposit.swap_params, _amount, amount_out_min, _deposit.pools, self)
     actual_amount: uint256 = _out_amount
     service_fee_amount: uint256 = 0
@@ -191,21 +195,23 @@ def _swap(deposit_id: uint256, remaining_count: uint256, amount_out_min: uint256
         if service_fee_amount > 0:
             send(self.service_fee_collector, service_fee_amount)
     else:
-        assert ERC20(_deposit.route[last_index]).transfer(_deposit.depositor, actual_amount, default_return_value = True), "failed transfer"
+        self._safe_transfer(_deposit.route[last_index], _deposit.depositor, actual_amount)
         if service_fee_amount > 0:
-            assert ERC20(_deposit.route[last_index]).transfer(self.service_fee_collector, service_fee_amount, default_return_value = True), "failed transfer"
+            self._safe_transfer(_deposit.route[last_index], self.service_fee_collector, service_fee_amount)
     log Swapped(deposit_id, _deposit.remaining_counts, _amount, _out_amount)
     return _out_amount
+
+@internal
+def _paloma_check():
+    assert msg.sender == self.compass_evm, "Not compass"
+    assert self.paloma == convert(slice(msg.data, unsafe_sub(len(msg.data), 32), 32), bytes32), "Invalid paloma"
 
 @external
 @nonreentrant('lock')
 def multiple_swap(deposit_id: DynArray[uint256, MAX_SIZE], remaining_counts: DynArray[uint256, MAX_SIZE], amount_out_min: DynArray[uint256, MAX_SIZE]):
-    assert msg.sender == self.compass_evm, "Unauthorized"
+    self._paloma_check()
     _len: uint256 = len(deposit_id)
     assert _len == len(amount_out_min) and _len == len(remaining_counts), "Validation error"
-    _len = unsafe_add(unsafe_mul(unsafe_add(_len, 2), 96), 36)
-    assert len(msg.data) == _len, "invalid payload"
-    assert self.paloma == convert(slice(msg.data, unsafe_sub(_len, 32), 32), bytes32), "invalid paloma"
     for i in range(MAX_SIZE):
         if i >= len(deposit_id):
             break
@@ -222,16 +228,15 @@ def multiple_swap_view(deposit_id: DynArray[uint256, MAX_SIZE], remaining_counts
         res.append(self._swap(deposit_id[i], remaining_counts[i], 1, False))
     return res
 
-@external
-@nonreentrant('lock')
-def cancel(deposit_id: uint256):
+@internal
+def _cancel(deposit_id: uint256):
     _deposit: Deposit = self.deposit_list[deposit_id]
     assert _deposit.depositor == msg.sender, "Unauthorized"
-    assert _deposit.input_amount > 0, "all traded"
+    assert _deposit.input_amount > 0, "All traded"
     if _deposit.route[0] == VETH:
         send(msg.sender, _deposit.input_amount)
     else:
-        assert ERC20(_deposit.route[0]).transfer(msg.sender, _deposit.input_amount, default_return_value = True), "failed transfer"
+        self._safe_transfer(_deposit.route[0], msg.sender, _deposit.input_amount)
     _deposit.input_amount = 0
     _deposit.remaining_counts = 0
     self.deposit_list[deposit_id] = _deposit
@@ -239,56 +244,51 @@ def cancel(deposit_id: uint256):
 
 @external
 @nonreentrant('lock')
+def cancel(deposit_id: uint256):
+    self._cancel(deposit_id)
+
+@external
+@nonreentrant('lock')
 def multiple_cancel(deposit_ids: DynArray[uint256, MAX_SIZE]):
     for deposit_id in deposit_ids:
-        _deposit: Deposit = self.deposit_list[deposit_id]
-        assert _deposit.depositor == msg.sender, "Unauthorized"
-        assert _deposit.input_amount > 0, "all traded"
-        if _deposit.route[0] == VETH:
-            send(msg.sender, _deposit.input_amount)
-        else:
-            assert ERC20(_deposit.route[0]).transfer(msg.sender, _deposit.input_amount, default_return_value = True), "failed transfer"
-        _deposit.input_amount = 0
-        _deposit.remaining_counts = 0
-        self.deposit_list[deposit_id] = _deposit
-        log Canceled(deposit_id)
+        self._cancel(deposit_id)
 
 @external
 def update_compass(new_compass: address):
-    assert msg.sender == self.compass_evm and len(msg.data) == 68 and convert(slice(msg.data, 36, 32), bytes32) == self.paloma, "Unauthorized"
+    self._paloma_check()
     self.compass_evm = new_compass
     log UpdateCompass(msg.sender, new_compass)
 
 @external
 def update_refund_wallet(new_refund_wallet: address):
-    assert msg.sender == self.compass_evm and len(msg.data) == 68 and convert(slice(msg.data, 36, 32), bytes32) == self.paloma, "Unauthorized"
+    self._paloma_check()
     old_refund_wallet: address = self.refund_wallet
     self.refund_wallet = new_refund_wallet
     log UpdateRefundWallet(old_refund_wallet, new_refund_wallet)
 
 @external
 def update_fee(new_fee: uint256):
-    assert msg.sender == self.compass_evm and len(msg.data) == 68 and convert(slice(msg.data, 36, 32), bytes32) == self.paloma, "Unauthorized"
+    self._paloma_check()
     old_fee: uint256 = self.fee
     self.fee = new_fee
     log UpdateFee(old_fee, new_fee)
 
 @external
 def set_paloma():
-    assert msg.sender == self.compass_evm and self.paloma == empty(bytes32) and len(msg.data) == 36, "Invalid"
+    assert msg.sender == self.compass_evm and self.paloma == empty(bytes32) and len(msg.data) == 36, "Unauthorized"
     _paloma: bytes32 = convert(slice(msg.data, 4, 32), bytes32)
     self.paloma = _paloma
     log SetPaloma(_paloma)
 
 @external
 def update_service_fee_collector(new_service_fee_collector: address):
-    assert msg.sender == self.service_fee_collector, "Unauthorized"
+    self._paloma_check()
     self.service_fee_collector = new_service_fee_collector
     log UpdateServiceFeeCollector(msg.sender, new_service_fee_collector)
 
 @external
 def update_service_fee(new_service_fee: uint256):
-    assert msg.sender == self.compass_evm and len(msg.data) == 68 and convert(slice(msg.data, 36, 32), bytes32) == self.paloma, "Unauthorized"
+    self._paloma_check()
     assert new_service_fee < DENOMINATOR, "Wrong service fee"
     old_service_fee: uint256 = self.service_fee
     self.service_fee = new_service_fee
