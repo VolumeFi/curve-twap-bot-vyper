@@ -5,7 +5,7 @@ def main():
     acct = accounts.load("deployer_account")
     max_base_fee = int(networks.active_provider.base_fee * 1.2)
     compass = "0x82Ed642F4067D55cE884e2823951baDfEdC89e73"
-    curve_router = "0xF0d4c12A5768D806021F80a262B4d39d26C58b8D"
+    curve_router = "0x2191718CD32d02B8E60BAdFFeA33E4B5DD9A0A0D"
     refund_wallet = "0x6dc0A87638CD75Cc700cCdB226c7ab6C054bc70b"
     fee = 0
     service_fee_collector = "0xe693603C9441f0e645Af6A5898b76a60dbf757F4"
